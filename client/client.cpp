@@ -4,10 +4,31 @@
 #include<arpa/inet.h>
 #include<unistd.h>
 
+#include<thread>
+
 using std::cout;
 using std::endl;
 using std::string;
 using std::cin;
+using std::thread;
+
+
+void recvThread(int sock){
+    char buf[1024];
+
+    while(true){
+        int n = recv(sock, buf, sizeof(buf)-1, 0);
+
+	if(n <= 0){
+            cout << "\n服务器断开连接" << endl;
+	    break;
+        }
+
+	buf[n] = '\0';
+
+	cout << "\n对方：" << buf << endl;
+    }
+}
 
 int main(){
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -19,18 +40,15 @@ int main(){
 
     int n = connect(client_fd, (sockaddr*)&server, sizeof(server));
 
-    if(n < 0){
-        perror("connect");
-	return 1;
-    }
+    cout << "连接成功" << endl;
 
-    cout << "客户端连接成功" << endl;
+    thread t(recvThread, client_fd);
 
     string msg;
 
     while(getline(cin, msg)){
 	if(msg == "exit"){
-	    close(client_fd);
+	    shutdown(client_fd, SHUT_RDWR);
             break;
 	}
 	
@@ -39,5 +57,7 @@ int main(){
 	cout << "发送成功" << endl;
     }
     
+    t.join();
+
     close(client_fd);
 }
