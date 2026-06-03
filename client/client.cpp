@@ -19,14 +19,21 @@ void recvThread(int sock){
     while(true){
         int n = recv(sock, buf, sizeof(buf)-1, 0);
 
-	if(n <= 0){
-            cout << "\n服务器断开连接" << endl;
+	if(n == 0){
+	    cout << "\n服务器断开连接" << endl;
+	    
+	    close(sock);
 	    break;
+        }
+
+	if(n < 0){
+            perror("recv");
+            break;
         }
 
 	buf[n] = '\0';
 
-	cout << "\n对方：" << buf << endl;
+	cout << "\n收到消息：" << buf << "\n"  << endl;
     }
 }
 

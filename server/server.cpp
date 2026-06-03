@@ -6,30 +6,94 @@
 
 #include <thread>
 
+#include <vector>
+#include <mutex>
+#include <algorithm>
+
 using std::cout;
 using std::endl;
+using std::string;
 using std::thread;
 
+using std::vector;
+using std::mutex;
+using std::lock_guard;
 
-void relay(int from, int to){      // 转发函数
+vector<int> clients;
+mutex clients_mutex;
+
+
+void broadcast(const char* buf, int len, int send_sock){
+    lock_guard<mutex> lock(clients_mutex);
+
+    for(auto fd: clients){
+        if(fd != send_sock){
+	    send(fd, buf, len, 0);
+	}
+    }
+}
+
+void client_handler(int fd){      
     char buf[1024];
 
     while(true){
-        int n = recv(from, buf, sizeof(buf), 0);
+        int n = recv(fd, buf, sizeof(buf), 0);
 
 	if(n == 0){
             cout << "一个客户端离线" << endl;
-            const char* msg = "[系统] 对方已离线";
-            send(to, msg, strlen(msg), 0);
-            break;	    
+            
+	    lock_guard<mutex> lock(clients_mutex);
+            clients.erase(remove(clients.begin(), clients.end(), fd),clients.end());
+           
+	    close(fd);
+	    break;	    
 	}
 
 	if(n < 0){
 	    perror("recv");      
-       	    break;
+            
+	    lock_guard<mutex> lock(clients_mutex);
+            clients.erase(remove(clients.begin(), clients.end(), fd),clients.end());
+            
+            close(fd);
+	    break;
         }
 
-	send(to, buf, n, 0);
+	broadcast(buf, n, fd);
+    }
+}
+
+void shutdown_all_clients(){
+    lock_guard<mutex> lock(clients_mutex);
+
+    const char* msg = "[Server] 服务器即将关闭\n";
+
+    for(auto fd : clients){
+        send(fd, msg, strlen(msg), 0);
+
+        shutdown(fd, SHUT_RDWR);
+
+        close(fd);
+    }
+
+    clients.clear();
+
+    cout << "所有客户端已断开" << endl;
+}
+
+void server_command(){
+    string cmd;
+
+    while(true){
+        getline(std::cin, cmd);
+
+        if(cmd == "exit"){
+            shutdown_all_clients();
+
+            cout << "服务器关闭" << endl;
+
+            exit(0);
+        }
     }
 }
 
@@ -43,31 +107,30 @@ int main(){
 
     bind(listen_fd, (sockaddr*)&local_addr, sizeof(local_addr));
 
-    listen(listen_fd, 3);
+    listen(listen_fd, 10);
 
-    cout << "服务端等待客户端1连接..." << endl;
+    cout << "聊天室服务器启动成功\n（输入exit可关闭服务器）" << endl;
 
-    int server_fd1 = accept(listen_fd, nullptr, nullptr);
+    thread cmd_thread(server_command);
+    cmd_thread.detach();
 
-    cout << "客户端1已连接" << endl;
+    while(true){
+        int server_fd = accept(listen_fd, nullptr, nullptr);
 
+        if(server_fd < 0) {
+            perror("accept");
+            continue;
+        }
 
+       	lock_guard<std::mutex> lock(clients_mutex);
+	clients.push_back(server_fd);
+	cout << "新客户端连接" << endl;
 
-    cout << "服务端等待客户端2连接..." << endl;
+	thread t(client_handler, server_fd);
 
-    int server_fd2 = accept(listen_fd, nullptr, nullptr);
+        t.detach();
+    }
 
-    cout << "客户端2已连接" << endl;
-
-    thread t1(relay, server_fd1, server_fd2);
-    thread t2(relay, server_fd2, server_fd1);
-
-    t1.join();
-    t2.join();
-
-
-    close(server_fd1);
-    close(server_fd2);
     close(listen_fd);
 
 }	
