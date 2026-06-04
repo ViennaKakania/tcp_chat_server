@@ -10,6 +10,8 @@
 #include <mutex>
 #include <algorithm>
 
+#include <unordered_map>
+
 using std::cout;
 using std::endl;
 using std::string;
@@ -19,7 +21,10 @@ using std::vector;
 using std::mutex;
 using std::lock_guard;
 
+using std::unordered_map;
+
 vector<int> clients;
+unordered_map<int,string> users;
 mutex clients_mutex;
 
 
@@ -40,11 +45,14 @@ void client_handler(int fd){
         int n = recv(fd, buf, sizeof(buf), 0);
 
 	if(n == 0){
-            cout << "一个客户端离线" << endl;
+            cout << users[fd]  << "离开聊天室\n" << endl;
+	    string offline_msg = "[系统] " + users[fd] + " 离开聊天室\n";
+	    broadcast(offline_msg.c_str(), offline_msg.size(), -1);
             
 	    lock_guard<mutex> lock(clients_mutex);
             clients.erase(remove(clients.begin(), clients.end(), fd),clients.end());
-           
+            users.erase(fd);
+
 	    close(fd);
 	    break;	    
 	}
@@ -59,7 +67,8 @@ void client_handler(int fd){
 	    break;
         }
 
-	broadcast(buf, n, fd);
+	string msg = "[" + users[fd] + "] " + string(buf, n);
+	broadcast(msg.c_str(), msg.size(), fd);
     }
 }
 
@@ -116,6 +125,11 @@ int main(){
 
     while(true){
         int server_fd = accept(listen_fd, nullptr, nullptr);
+        
+	char name_buf[128];
+	int m = recv(server_fd, name_buf, sizeof(name_buf), 0);
+	string username(name_buf, m);   //转为字符串
+	users[server_fd] = username;
 
         if(server_fd < 0) {
             perror("accept");
@@ -124,7 +138,7 @@ int main(){
 
        	lock_guard<std::mutex> lock(clients_mutex);
 	clients.push_back(server_fd);
-	cout << "新客户端连接" << endl;
+	cout << users[server_fd] << "上线" << endl;
 
 	thread t(client_handler, server_fd);
 
