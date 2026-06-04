@@ -33,7 +33,7 @@ void recvThread(int sock){
 
 	buf[n] = '\0';
 
-	cout << "\n收到消息：" << buf << "\n"  << endl;
+	cout << "\n收到消息：\n" << buf << "\n"  << endl;
     }
 }
 
@@ -45,7 +45,13 @@ int main(){
     server.sin_port = htons(9090);
     inet_pton(AF_INET, "192.168.145.129", &server.sin_addr);
 
+    string username;
+    cout << "请输入昵称: ";
+    getline(cin, username);
+
     int n = connect(client_fd, (sockaddr*)&server, sizeof(server));
+
+    send(client_fd, username.c_str(), username.size(), 0);
 
     cout << "连接成功" << endl;
 
