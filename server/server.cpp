@@ -27,6 +27,16 @@ vector<int> clients;
 unordered_map<int,string> users;
 mutex clients_mutex;
 
+int find_user_fd(const string username){              // 查找用户的fd值，用于发信息时给send填参数
+    lock_guard<mutex> lock(clients_mutex);
+
+    for(auto& p: users){
+        if(username == p.second) 
+	    return p.first;
+    }
+
+    return -1;
+}
 
 void broadcast(const char* buf, int len, int send_sock){
     lock_guard<mutex> lock(clients_mutex);
@@ -68,7 +78,49 @@ void client_handler(int fd){
         }
 
 	string msg = "[" + users[fd] + "] " + string(buf, n);
-	broadcast(msg.c_str(), msg.size(), fd);
+
+        string client_input(buf, n);
+	if(client_input == "/list"){
+	    string user_list = "=====在线用户=====\n";
+
+	    lock_guard<mutex> lock(clients_mutex);
+
+            for(auto& p : users){
+                user_list += p.second + "  ";
+            }
+
+	    user_list += "\n=================\n";
+
+	    send(fd, user_list.c_str(), user_list.size(), 0);
+	    continue;
+	}
+	
+	if(client_input[0] == '@'){
+            size_t pos = client_input.find(' ');
+
+            string target_user = client_input.substr(1,pos-1);
+
+            string private_msg = client_input.substr(pos+1);
+
+            int target_fd = find_user_fd(target_user);
+
+            if(target_fd == -1){
+                string err = "[系统] 用户不存在\n";
+
+                send(fd, err.c_str(), err.size(), 0);
+
+                continue;
+            }
+
+            string msg = "[私聊][" + users[fd] + "] " + private_msg;
+
+            send(target_fd, msg.c_str(), msg.size(), 0);
+
+            continue;
+        } 
+
+        // 客户端如果是查询用户列表或私聊，会进入上面的if判断，并跳过广播
+	broadcast(msg.c_str(), msg.size(), fd);  
     }
 }
 
